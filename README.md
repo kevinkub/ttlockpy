@@ -4,6 +4,12 @@ A Python rewrite of the TTLock BLE SDK with a clean CLI interface.
 
 The original JavaScript SDK lives in `origin/` for reference.
 
+> **Disclaimer:** This project was written entirely by AI (Claude) based on the
+> original JavaScript SDK source code.  It has not yet been tested against real
+> hardware.  Testing is planned once the hardware arrives and time permits.
+> Use at your own risk and expect bugs — contributions and bug reports are very
+> welcome.
+
 ## Requirements
 
 - Python 3.11+
