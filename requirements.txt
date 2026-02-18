@@ -1,0 +1,7 @@
+# TTLock Python library dependencies
+
+# Cross-platform BLE (Linux/BlueZ, macOS/CoreBluetooth, Windows/WinRT)
+bleak>=0.21.0
+
+# AES-128-CBC encryption
+cryptography>=41.0.0

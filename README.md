@@ -1,186 +1,155 @@
-# ttlock-sdk-js
+# TTLock Python
 
-The goal of this project is to make a partial JavaScript port of the TTLock Android SDK enough to make it work with the biometric locks.  
+A Python rewrite of the TTLock BLE SDK with a clean CLI interface.
 
-> This is just an SDK providing the means to communicate with the locks, it is not an app providing the full functionality of the TTLock app. If you are looking for an implementation please see [ttlock-hass-integration](https://github.com/kind3r/hass-addons) Home Assistant Addon.  
+The original JavaScript SDK lives in `origin/` for reference.
 
-> Bluetooth implementation is using [@abandonware/noble](https://github.com/abandonware/noble) but other implementations are possible by extending [ScannerInterface](./src/scanner/ScannerInterface.ts)  
-
-Feeling generous and want to support my work, here is [my PayPal link](https://paypal.me/kind3r).  
+> **Disclaimer:** This project was written entirely by AI (Claude) based on the
+> original JavaScript SDK source code.  It has not yet been tested against real
+> hardware.  Testing is planned once the hardware arrives and time permits.
+> Use at your own risk and expect bugs — contributions and bug reports are very
+> welcome.
 
 ## Requirements
-- node.js v12 or newer
-- a bluetooth adapter on any platform* that [@abandonware/noble](https://github.com/abandonware/noble#installation) works on
 
-> *) It was tested on a Raspberry PI 3 running Debian and also under Home Assistant runing on an Intel NUC
+- Python 3.11+
+- Bluetooth adapter (host OS must have BLE support)
+- Linux: BlueZ (`sudo apt install bluez`)
+- macOS: CoreBluetooth (built-in)
+- Windows: Windows Runtime BLE (Win 10+)
 
-## Implemented features
-- [X] discover locks
-- [X] initialize (pair) locks
-- [X] reset to factory defaults
-- [X] lock
-- [X] unlock
-- [X] get lock/unlock status
-- [X] set/get autolock time
-- [X] add/edit/delete/clear passage mode
-- [X] add/edit/remove keyboard passwords (PIN codes)
-- [X] add/edit/remove fingerprints
-- [X] add/edit/remove IC Cards 
-- [X] get operation log
-- [X] detect lock/unlock events*
+```
+pip install -r requirements.txt
+```
 
-## Planned development
-- [ ] categorize and translate LogOperate
-- [ ] add some logger to separate debug events from normal ones
-- [ ] proper timezone support
-- [ ] cyclic based validity setup for credentials (ex.: Mo-Fr from 9AM to 5PM)
-- [ ] API documentation
+## Quick start
 
-> *) See [Monitoring for lock/unlock events](#Monitoring-for-lock/unlock-events).
-
-## **Known issues and limitations**
-- Pairing the lock can sometimes fail. It is recommended to pair the lock before installing it on the door so you can use the button on the back to factory reset it.
-- BLE signal is generaly bad, at least combined with the PI 3. Sometimes commands fail because of this (presumption).
-- Editing validity intervals of fingerprints and IC Cards does not work. *Perhaps it is required to remove and re-add*.
-- Some commands always have a bad CRC (added option to auto-ignore bad CRC if all 3 retry attempts have the same result).
-- The SDK only works with locks that use the V3 protocol for communication.
-
-## Gateway option
-
-The websocket binding present in [@abandonware/noble](https://github.com/abandonware/noble) was extended with a simple authentication via AES key, user and password. This adds basic suport for using a bluetooth adapter on a remote host via a simple websocket connection. The end goal will be to run an ESP32 as a gateway ([development ongoing](https://github.com/kind3r/esp32-ble-gateway)) to extend the range of the device the SDK is running on, or maybe just use it on a device that does not even have a bluetooth adapter. A sample server is implemented in [tools/server.js](./tools/server.js). All examples in the SKD can be started in websocket mode by adding the following environment variables:
-- `WEBSOCKET_DEBUG=1` - debug websocket messages
-- `WEBSOCKET_ENABLE=1` - this will enable websocket support
-- `WEBSOCKET_HOST=127.0.0.1` - the IP or hostname of the host running the server
-- `WEBSOCKET_PORT=2846` - the port the server is running on
-
-For example:
 ```sh
-pi@raspberrypi:~/ttlock-sdk-js $ WEBSOCKET_ENABLE=1 WEBSOCKET_HOST=192.168.1.42 npm run get-cards
+# Find nearby locks (shows address, battery, locked status)
+python ttlock.py discover
+
+# Pair a factory-fresh lock (LED must be blinking)
+python ttlock.py pair --address AA:BB:CC:DD:EE:FF --save lock.json
+
+# Unlock / lock
+python ttlock.py unlock --lock lock.json
+python ttlock.py lock   --lock lock.json
+
+# Query locked/unlocked state
+python ttlock.py status --lock lock.json
+
+# Monitor events from BLE advertising (no connection needed)
+python ttlock.py listen
+
+# Factory reset
+python ttlock.py reset --lock lock.json
 ```
 
-## Debug options
-
-- `TTLOCK_IGNORE_CRC=1` - Ignore CRC error on messages received from the lock
-- `TTLOCK_DEBUG_COMM=1` - Log raw lock communication messages  
- 
-
-## Sample usage of this SDK
-
-1. Clone the repo and install the dependencies `npm i`.
-2. Check the installation prerequisites for your OS on the [@abandonware/noble](https://github.com/abandonware/noble#installation) GitHub page. Make sure you also read the [Running without root/sudo (Linux-specific)](https://github.com/abandonware/noble#running-without-rootsudo-linux-specific) section for running without sudo.  
-
-The code for the followinng examples are located in the [examples](./examples) folder.
-
-### Initialisation
-
-`npm run init` - performs the initial pairing with the lock.
-
-The lock needs to be reset to factory defaults and it needs to be woke up by touching the keyboard. The lock stays alive for 10-15s and only in that interval it is discoverable so you need to time this right.
-
-> If the lock is woke up after the scan has started it won't be found.  
-
-> If the lock is woke up too early, it can go back to sleep before the init process is completed.  
-
-> The init script provides a countdown of 10 seconds, waking up the lock 5 seconds before the scan start proved to be most reliable. 
-
-After the initialisation is completed, the script ouputs the credentials for the lock into the `lockData.json` file. This file is used by the other scripts.
-
-**Sometimes the pairing process fails** for reasons that are not quite clear. The pairing process has to be repeated until it succedes. Possible causes of failure are:
-- the lock is too close to the PI
-- something wrong in the BLE library used
-- drivers
-
-In case the lock needs to be reseted to factory defaults, there is a switch on the back of the part that goes on the outside. Removing the metal cover will reveal this switch. Short pressing the switch will reboot the lock (one beep), long pressing for about 2-3 seconds will reset the lock to factory defaults (two beeps).
-
-### Lock/Unlock
-
-`npm run unlock` - unlock the lock  
-`npm run lock` - lock the lock
-
-Those 2 scripts read the lock credentials from `lockData.json` file generated by the init script, start searching for the lock and connect to it. Once the known lock is found and connected they perform the lock/unlock command. 
-
-Bu default, auto locking is set for 5 seconds. So after unlocking, it will auto lock back.
-
-### Lock status
-
-`npm run status` - returns the lock or unlock status  
-
-### Passage mode
-
-Passage mode disables autolock for the intervals you set. All unlock metods are now treated as toggle (lock/unlock) instead of just unlock and locking back after the autolock timeout. 
-
-`npm run set-passage` - sets passage mode for friday all day  
-`npm run get-passage` - gets the passage mode intervals  
-`npm run delete-passage` - deletes the passage mode for friday all day  
-`npm run clear-passage` - deletes all passage mode intervals
-
-### Reset to factory defaults
-
-`npm run reset` - resets the lock to factory defaults
-
-Performs a soft reset of the lock to factory data. The credentials file `lockData.json` is automatically updated and the reseted lock is removed.
-
-### Passcodes management
-
-Passcodes or keyboard passcodes or pin codes allow oppening the lock using a 4-8 digits code. The passcodes can be permanent, one time, or limited time. 
-
-`npm run add-passcode` - sets a permanent passcode **123456** available all the time  
-`npm run update-passcode` - updates the permanent passcode **123456** to **654321**  
-`npm run delete-passcode` - deletes the permanent passcode **654321**  
-`npm run clear-passcodes` - removes all passcodes  
-
-### IC Card management
-
-IC cards are scanned and their serial number is returned. You can then add validity intervals for that card serial number. Also works with credit cards. 
-
-`npm run add-card` - scans a card and adds a permanent validity  
-`npm run get-cards` - lists all the valid cards and their intervals  
-`npm run clear-cards` - removes all registered cards  
-
-### Fingerprint management
-
-Fingerprints are scanned mutiple times during the add process. After scanning you can add validity intervals for that fingerprint.
-
-`npm run add-fingerprint` - scans a fingerprint and adds a permanent validity (it will timeout after 8.5 seconds if you do not scan a finger)  
-`npm run get-fingerprints` - lists all valid fingerprints and their intervals  
-`npm run clear-fingerprints` - removes all registered fingerprints  
-
-### Lock sound
-
-Disable the anoying beeps.  
-
-`npm run delete-locksound`  
-
-### Operation log
-
-Get the log of operations from the lock (lock, unlock, add/edit/remove credentials etc.).
-
-`npm run get-operations`
-
-### Monitoring for lock/unlock events
-
-Detecting lock/unlock events is possible by using a passive scan and monitoring changes in `params byte` of the advertising data. 
+## All commands
 
 ```
-0000 0000
-|||| ||||__ (  1) isUnlock
-|||| |||___ (  2) new operation log events
-|||| ||____ (  4) isSettingMode
-|||| |_____ (  8) isTouch
-||||_______ ( 16) parkStatus
-|||________ ( 32) 
-||_________ ( 64) 
-|__________ (128) 
+python ttlock.py <command> [subcommand] [options]
+
+discover                           Scan for TTLock devices
+pair       --address ADDR          Pair with a new lock
+unlock     --lock FILE             Unlock
+lock       --lock FILE             Lock
+reset      --lock FILE             Factory reset
+status     --lock FILE             Poll locked/unlocked status
+listen     [--timeout N]           Passive BLE event monitor
+log        --lock FILE             Print operation log
+
+autolock get  --lock FILE          Read auto-lock delay
+autolock set  --lock FILE --seconds N   Set auto-lock delay
+
+passage list   --lock FILE         List passage-mode intervals
+passage add    --lock FILE --type weekly|monthly --day N
+               --start HHMM --end HHMM
+passage delete --lock FILE --type weekly|monthly --day N
+               --start HHMM --end HHMM
+passage clear  --lock FILE
+
+pin list   --lock FILE             List PIN codes
+pin add    --lock FILE --code CODE [--type permanent|timed|count|circle]
+           [--start YYMMDDHHmmss] [--end YYMMDDHHmmss]
+pin update --lock FILE --old CODE --new CODE
+pin delete --lock FILE --code CODE
+pin clear  --lock FILE
+
+card list   --lock FILE            List IC cards
+card add    --lock FILE            Scan a new card (interactive)
+card update --lock FILE --number N --start DATE --end DATE
+card delete --lock FILE --number N
+card clear  --lock FILE
+
+fingerprint list   --lock FILE     List fingerprints
+fingerprint add    --lock FILE     Enrol a fingerprint (interactive)
+fingerprint update --lock FILE --id ID --start DATE --end DATE
+fingerprint delete --lock FILE --id ID
+fingerprint clear  --lock FILE
 ```
 
-This will tell us when new operation logs are available which we can fetch to (hopefully) figure out what happend. Unfortunatelly auto-lock events are not recorded in this log, so a combination of 'new operation' bit detection together with isUnlock bit has to be used. Also, because advertising packets are sent whenever the lock wants to send them, change detection is not realtime (still, within a maximum of 10s interval).
+## Library usage
 
-`npm run listen`
+```python
+import asyncio
+from ttlock import TTLock, discover_locks
 
-## Credits
+async def main():
+    # Scan
+    locks = await discover_locks(timeout=10)
+    for l in locks:
+        print(l.address, l.mac, l.battery)
 
-- [Valentino Stillhardt (@Fusseldieb)](https://github.com/Fusseldieb) for initial protocol analysis and providing remote access to his lock
+    # Connect and operate
+    lock = TTLock.from_file("lock.json")
+    async with lock:
+        await lock.unlock()
+        print("Battery:", lock.battery)
+        log = await lock.get_operation_log()
+    lock.save("lock.json")
 
-## License
+asyncio.run(main())
+```
 
-[GPL-3.0](LICENSE)
+## Lock data file (lock.json)
+
+```json
+{
+  "address": "AA:BB:CC:DD:EE:FF",
+  "name": "TTLock",
+  "mac": "AA:BB:CC:DD:EE:FF",
+  "battery": 85,
+  "locked_status": 0,
+  "auto_lock_time": 5,
+  "protocol_type": 5,
+  "protocol_version": 3,
+  "scene": 1,
+  "aes_key": "0123456789abcdef0123456789abcdef",
+  "admin_ps": 12345678,
+  "unlock_key": 87654321,
+  "admin_passcode": "1234567"
+}
+```
+
+## Architecture
+
+```
+ttlock/
+├── const.py      All enums and BLE UUIDs
+├── crypto.py     AES-128-CBC, CRC, XOR helpers
+├── protocol.py   BLE packet builder / parser
+├── commands.py   Per-command payload builders and response parsers
+├── scanner.py    BLE discovery (bleak)
+└── lock.py       TTLock class – high-level async API
+
+ttlock.py         CLI entry point (argparse)
+requirements.txt
+```
+
+## Notes on compatibility
+
+- Targets **protocol V3** locks (protocolType=5, subVersion=3) — the most common variant.
+- Older V2/V2S locks use a different packet format; they will be detected during `discover` but most operations may not work.
+- The `listen` command does not require a connection — it reads lock/unlock state directly from BLE advertisements.
+- On macOS the BLE address shown by `discover` is a CoreBluetooth UUID, not a MAC address. Use that UUID for `pair` and subsequent commands.
